@@ -1,1 +1,40 @@
+pipeline {
+    agent any
 
+    stages {
+        stage('Cloning Deployment Git') {
+            steps {
+                checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/6shihab/example-voting-app-manifests.git']])
+            }
+        }
+        
+        stage('Change Deployment File with latest version'){
+            steps{
+                script{
+                    sh '''
+                        LATEST_BUILD_NUMBER=$(curl -s --user shihab:shihab http://10.10.10.160:8080/job/example-voting-app-cicd/lastBuild/buildNumber)
+                        echo "${LATEST_BUILD_NUMBER}"
+                        
+                        PREVIOUS_BUILD_NUMBER=$(grep -E "6shihab/example-voting-app_worker" "k8s-specifications/worker-deployment.yaml" | sed 's/.*://')
+                        
+                    
+                        sed -i "s/${PREVIOUS_BUILD_NUMBER}/${LATEST_BUILD_NUMBER}/g" k8s-specifications/vote-deployment.yaml
+                        sed -i "s/${PREVIOUS_BUILD_NUMBER}/${LATEST_BUILD_NUMBER}/g" k8s-specifications/worker-deployment.yaml
+                        sed -i "s/${PREVIOUS_BUILD_NUMBER}/${LATEST_BUILD_NUMBER}/g" k8s-specifications/result-deployment.yaml
+                    '''
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]){
+                        sh '''
+                            git config user.email "6shihab@gmail.com"
+                            git config user.name "6shihab"
+                            git add k8s-specifications/vote-deployment.yaml k8s-specifications/worker-deployment.yaml k8s-specifications/result-deployment.yaml
+                            git commit -m "Update deployments image tag"
+                            git push https://${GITHUB_TOKEN}@github.com/6shihab/example-voting-app-manifests HEAD:main
+                        '''
+                
+                    }
+                }
+                
+            }
+        }
+    }
+}
